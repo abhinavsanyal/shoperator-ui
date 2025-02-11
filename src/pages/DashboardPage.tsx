@@ -91,7 +91,6 @@ export default function DashboardPage() {
   const [modifiedPrompt, setModifiedPrompt] = useState<string>("");
 
   const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
-  const [selectedSteps] = useState(20);
 
   useEffect(() => {
     if (error) {
