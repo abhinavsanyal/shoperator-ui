@@ -1,6 +1,6 @@
 import { UserButton, useUser } from "@clerk/clerk-react";
-import { useState, useRef, useEffect, useCallback } from "react";
-import { runAgent, getAgentHistory, getAgentId, stopAgent } from "../api";
+import { useState, useRef, useEffect } from "react";
+import { runAgent, stopAgent } from "../api";
 
 interface WebSocketMessage {
   type: string;
@@ -49,7 +49,8 @@ export default function DashboardPage() {
   const [isTaskActive, setIsTaskActive] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const [agentProgress, setAgentProgress] = useState({
+
+  const [agentProgress] = useState({
     memory: "",
     taskProgress: "",
     futurePlans: "",
@@ -57,8 +58,6 @@ export default function DashboardPage() {
   });
 
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [agentId, setAgentId] = useState<string | null>(null);
 
   const timelineContainerRef = useRef<HTMLDivElement>(null);
 
@@ -191,7 +190,6 @@ export default function DashboardPage() {
       console.log("Agent run response:", response);
 
       if (response.client_id) {
-        setClientId(response.client_id);
         setupWebSocket(response.client_id);
       }
     } catch (error: any) {
@@ -242,7 +240,10 @@ export default function DashboardPage() {
   const formatActionContent = (actionStr: string) => {
     try {
       const actionObj = JSON.parse(actionStr);
-      const [actionType, actionData] = Object.entries(actionObj)[0];
+      const actionEntries = Object.entries(actionObj);
+      if (!actionEntries.length)
+        return <div className="text-gray-600">{actionStr}</div>;
+      const [actionType, actionData] = actionEntries[0] as [string, any];
 
       switch (actionType) {
         case "go_to_url":
@@ -287,7 +288,7 @@ export default function DashboardPage() {
                 Copy to Clipboard
               </span>
               <span className="text-gray-600 pl-2 border-l-2 border-yellow-200 mt-1">
-                {(actionData as unknown as { text: string }).text}
+                {actionData.text}
               </span>
             </div>
           );
@@ -298,9 +299,7 @@ export default function DashboardPage() {
               <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded-md text-sm font-medium">
                 Complete
               </span>
-              <span className="text-gray-600">
-                {(actionData as unknown as { text: string }).text}
-              </span>
+              <span className="text-gray-600">{actionData.text}</span>
             </div>
           );
 
@@ -397,7 +396,6 @@ export default function DashboardPage() {
     }, {} as Record<number, TimelineItem[]>);
 
     return Object.entries(groupedByStep).map(([step, items]) => {
-      // Find the summary message for this step
       const summaryItem = items.find(
         (item) =>
           item.type === "log" &&
@@ -465,11 +463,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Top Navbar */}
       <nav className="bg-white border-b border-gray-200 h-16 flex items-center px-4 fixed w-full z-10">
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center space-x-4">
-            {/* <img src="/logo.png" alt="Shoperator" className="h-8 w-auto" /> */}
             <span className="text-xl font-semibold text-gray-800">
               Shoperator v1.0
             </span>
@@ -486,7 +482,6 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      {/* Main Content Area - pushed down by navbar height */}
       <div className="flex-1 pt-16">
         {isTaskActive ? (
           <div className="flex h-[calc(100vh-4rem)]">
