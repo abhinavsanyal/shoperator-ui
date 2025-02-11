@@ -40,7 +40,33 @@ interface AgentStatus {
   errors: string | null;
 }
 
-export const runAgent = async (task: string) => {
+interface AgentHistory {
+  history: Array<{
+    prefix: string;
+    content: string;
+    timestamp: string;
+  }>;
+  is_running: boolean;
+  current_step: number;
+  max_steps: number;
+}
+
+interface AgentRunResponse {
+  message: string;
+  client_id: string;
+}
+
+interface AgentIdResponse {
+  agent_id: string;
+  status: string;
+}
+
+interface AgentErrorResponse {
+  error: string;
+  detail: string;
+}
+
+export const runAgent = async (task: string, clerkId: string) => {
   const config: AgentConfig = {
     task,
     agent_type: "custom",
@@ -55,9 +81,24 @@ export const runAgent = async (task: string) => {
   };
 
   try {
-    const response = await axios.post(`${API_BASE_URL}/agent/run`, config);
+    const response = await axios.post<AgentRunResponse>(
+      `${API_BASE_URL}/agent/run`,
+      {
+        ...config,
+        clerk_id: clerkId,
+      }
+    );
     return response.data;
   } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 400) {
+      // Extract the error details from the response
+      const errorData = error.response.data as AgentErrorResponse;
+      throw {
+        type: "VALIDATION_ERROR",
+        error: errorData.error,
+        detail: errorData.detail,
+      };
+    }
     console.error("Error running agent:", error);
     throw error;
   }
@@ -79,6 +120,34 @@ export const getAgentStatus = async (): Promise<AgentStatus> => {
     return response.data;
   } catch (error) {
     console.error("Error getting agent status:", error);
+    throw error;
+  }
+};
+
+export const getAgentHistory = async (
+  agent_id: string
+): Promise<AgentHistory> => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/agent/history/${agent_id}`
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error getting agent history:", error);
+    throw error;
+  }
+};
+
+export const getAgentId = async (
+  clientId: string
+): Promise<AgentIdResponse> => {
+  try {
+    const response = await axios.get<AgentIdResponse>(
+      `${API_BASE_URL}/agent/id/${clientId}`
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error getting agent ID:", error);
     throw error;
   }
 };
