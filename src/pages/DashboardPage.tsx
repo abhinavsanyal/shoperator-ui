@@ -42,9 +42,28 @@ interface TimelineItem {
   data: AgentLog | AgentAction | AgentUpdate;
 }
 
+interface DynamicFilters {
+  [key: string]: string[];
+}
+
+interface AgentRunResponse {
+  client_id: string;
+  dynamic_filters?: DynamicFilters;
+}
+
+interface ApiError {
+  type?: string;
+  error?: string;
+  detail?: string;
+  message?: string;
+}
+
+const MODEL_OPTIONS = ["gpt-4o-mini", "gpt-4", "o3-mini"];
+
 export default function DashboardPage() {
   const { user } = useUser();
   const [task, setTask] = useState("");
+  const [activeTaskPrompt, setActiveTaskPrompt] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTaskActive, setIsTaskActive] = useState(false);
   const [screenshot, setScreenshot] = useState<string | null>(null);
@@ -65,6 +84,14 @@ export default function DashboardPage() {
     message: string;
     detail: string;
   } | null>(null);
+
+  const [isStoppingTask, setIsStoppingTask] = useState(false);
+
+  const [dynamicFilters, setDynamicFilters] = useState<DynamicFilters>({});
+  const [modifiedPrompt, setModifiedPrompt] = useState<string>("");
+
+  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
+  const [selectedSteps] = useState(20);
 
   useEffect(() => {
     if (error) {
@@ -184,23 +211,28 @@ export default function DashboardPage() {
     setIsLoading(true);
     setIsTaskActive(true);
     setError(null);
+    setActiveTaskPrompt(task);
+    setModifiedPrompt(task);
+    setTask("");
 
     try {
-      const response = await runAgent(task, user.id);
-      console.log("Agent run response:", response);
+      const response = (await runAgent(task, user.id)) as AgentRunResponse;
 
       if (response.client_id) {
         setupWebSocket(response.client_id);
+        setDynamicFilters(response.dynamic_filters || {});
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error:", error);
+      const apiError = error as ApiError;
       setIsLoading(false);
       setIsTaskActive(false);
+      setActiveTaskPrompt(null);
 
-      if (error.type === "VALIDATION_ERROR") {
+      if (apiError.type === "VALIDATION_ERROR") {
         setError({
-          message: error.error,
-          detail: error.detail,
+          message: apiError.error || "An error occurred",
+          detail: apiError.detail || "Please try again",
         });
       } else {
         setError({
@@ -212,14 +244,22 @@ export default function DashboardPage() {
   };
 
   const handleStopTask = async () => {
+    setIsStoppingTask(true);
     try {
       await stopAgent();
       setIsLoading(false);
       setIsTaskActive(false);
+      setActiveTaskPrompt(null);
       cleanupWebSocket();
     } catch (error) {
       console.error("Error stopping task:", error);
+    } finally {
+      setIsStoppingTask(false);
     }
+  };
+
+  const handleClosePromptCard = () => {
+    setActiveTaskPrompt(null);
   };
 
   useEffect(() => {
@@ -425,13 +465,70 @@ export default function DashboardPage() {
             </div>
           )}
           <div className="ml-4">
-            {items.map((item, index) => (
-              <div key={index}>{renderTimelineItem(item)}</div>
-            ))}
+            {items
+              .filter(
+                (item) =>
+                  !(
+                    item.type === "log" &&
+                    (item.data as AgentLog).prefix
+                      .toLowerCase()
+                      .includes("summary")
+                  )
+              )
+              .map((item, index) => (
+                <div key={index}>{renderTimelineItem(item)}</div>
+              ))}
           </div>
         </div>
       );
     });
+  };
+
+  const InteractivePrompt: React.FC<{
+    prompt: string;
+    filters: DynamicFilters;
+    onChange: (newPrompt: string) => void;
+  }> = ({ prompt, filters, onChange }) => {
+    const words = prompt.split(" ");
+
+    const handleFilterChange = (originalWord: string, newValue: string) => {
+      const newWords = words.map((w) => (w === originalWord ? newValue : w));
+      onChange(newWords.join(" "));
+    };
+
+    return (
+      <div className="flex flex-wrap gap-2 items-center">
+        {words.map((word, index) => {
+          const filterOptions = Object.entries(filters).find(
+            ([key]) => key.toLowerCase() === word.toLowerCase()
+          );
+
+          if (filterOptions) {
+            return (
+              <select
+                key={index}
+                value={word}
+                onChange={(e) => handleFilterChange(word, e.target.value)}
+                className="px-2 py-1 rounded border border-blue-300 bg-blue-50 text-blue-700 cursor-pointer hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              >
+                <option value={filterOptions[0]}>{filterOptions[0]}</option>
+                {filterOptions[1].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            );
+          }
+
+          return (
+            <span key={index} className="text-gray-700">
+              {word}
+            </span>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -463,18 +560,18 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <nav className="bg-white border-b border-gray-200 h-16 flex items-center px-4 fixed w-full z-10">
-        <div className="flex items-center justify-between w-full">
+      <nav className="bg-white border-b border-gray-200 h-14 flex items-center px-6 fixed w-full z-10">
+        <div className="flex items-center justify-between w-full max-w-7xl mx-auto">
           <div className="flex items-center space-x-4">
-            <span className="text-xl font-semibold text-gray-800">
+            <span className="text-lg font-medium text-gray-800">
               Shoperator v1.0
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <UserButton afterSignOutUrl="/" />
-            <span className="text-gray-600 truncate max-w-[200px]">
+            <span className="text-sm text-gray-600 truncate max-w-[200px]">
               {user?.primaryEmailAddress?.emailAddress &&
-              user.primaryEmailAddress.emailAddress.length > 20
+              user.primaryEmailAddress.emailAddress.length > 40
                 ? `${user.primaryEmailAddress.emailAddress.substring(0, 17)}...`
                 : user?.primaryEmailAddress?.emailAddress}
             </span>
@@ -482,95 +579,269 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      <div className="flex-1 pt-16">
+      <div className="flex-1 pt-14 px-6">
         {isTaskActive ? (
-          <div className="flex h-[calc(100vh-4rem)]">
-            <div className="w-1/3 flex flex-col h-full border-r border-gray-200">
+          <div className="flex h-[calc(100vh-3.5rem)]">
+            <div className="w-1/3 relative flex flex-col h-full border-r border-gray-200 bg-white">
               <div
                 ref={timelineContainerRef}
-                className="h-[calc(100vh-14rem)] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+                className="h-[calc(100vh-14rem)] overflow-y-auto px-6 py-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
               >
                 {renderGroupedTimeline()}
               </div>
 
-              <div className="p-4 border-t border-gray-200 bg-white">
+              <div className="p-6 border-t border-gray-200 bg-white">
+                {activeTaskPrompt && (
+                  <div
+                    className="absolute bottom-[70%+0.5rem] left-0 right-0 
+                              bg-white rounded-lg p-4 shadow-lg border border-gray-200 
+                              w-[calc(100%-4rem)]
+                              mx-auto
+                              animate-[slideDown_0.3s_ease-out] z-10"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 pr-4">
+                        <div className="text-sm text-gray-500 mb-1">
+                          Current Task:
+                        </div>
+                        <div className="text-gray-700">
+                          <InteractivePrompt
+                            prompt={modifiedPrompt}
+                            filters={dynamicFilters}
+                            onChange={(newPrompt) =>
+                              setModifiedPrompt(newPrompt)
+                            }
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleClosePromptCard}
+                        className="text-gray-400 hover:text-gray-600 p-1"
+                      >
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <textarea
-                  className="w-full h-32 p-4 rounded-lg border border-gray-200 
-                  shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-200
-                  resize-none bg-white"
+                  className="w-full h-28 p-4 rounded-lg border border-gray-200 
+                  shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-200
+                  resize-none bg-white text-sm"
                   value={task}
                   onChange={(e) => setTask(e.target.value)}
                 />
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2">
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="px-2 py-1 text-xs rounded border border-gray-200 bg-white text-gray-700 
+                               hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+                  >
+                    {MODEL_OPTIONS.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-3 mt-3">
                   <button
-                    className={`flex-1 px-6 py-3 rounded-lg 
+                    className={`flex-1 px-5 py-2.5 rounded-lg text-sm
                     ${
                       !task.trim() || isLoading
-                        ? "bg-gray-400 cursor-not-allowed"
-                        : "bg-gray-900 hover:bg-gray-800"
+                        ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        : "bg-gray-900 hover:bg-gray-800 text-white"
                     }
-                    text-white`}
+                    transition-colors duration-200`}
                     onClick={handleStartTask}
                     disabled={!task.trim() || isLoading}
                   >
-                    {isLoading ? "Processing..." : "Start Task"}
+                    {isLoading ? "Agent is at work..." : "Run Shoperator Agent"}
                   </button>
                   {isLoading && (
                     <button
-                      className="flex-1 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white"
+                      className="flex-1 px-5 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm
+                      transition-colors duration-200"
                       onClick={handleStopTask}
+                      disabled={isStoppingTask}
                     >
-                      Stop Task
+                      {isStoppingTask ? "Stopping Agent..." : "Stop Agent"}
                     </button>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="w-1/2 h-full overflow-y-auto p-4">
+            <div className="w-2/3 h-full overflow-y-auto p-6 bg-gray-50">
               {screenshot && (
                 <img
                   src={`data:image/png;base64,${screenshot}`}
                   alt="Browser Screenshot"
-                  className="w-full rounded-lg shadow-lg"
+                  className="w-full rounded-lg shadow-sm border border-gray-200"
                 />
               )}
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-8">
-            <div className="w-full max-w-2xl">
-              <textarea
-                className="w-full h-40 p-4 mb-4 rounded-lg border border-gray-200 
-                shadow-[0_0_10px_rgba(0,0,0,0.1)] 
-                focus:outline-none focus:ring-2 focus:ring-gray-200
-                resize-none bg-white"
-                placeholder="Enter your task description..."
-                value={task}
-                onChange={(e) => setTask(e.target.value)}
-              />
-              <div className="flex gap-2">
+          <div className="flex-1 flex flex-col h-full items-center justify-center p-8">
+            <div className="w-full max-w-2xl relative px-4">
+              {activeTaskPrompt && (
+                <div
+                  className="absolute bottom-[calc(100%+0.5rem)] left-0 right-0 
+                              bg-white rounded-lg p-4 shadow-lg border border-gray-200 
+                              animate-[slideDown_0.3s_ease-out] z-10"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1 pr-4">
+                      <div className="text-sm text-gray-500 mb-1">
+                        Current Task:
+                      </div>
+                      <div className="text-gray-700">
+                        <InteractivePrompt
+                          prompt={modifiedPrompt}
+                          filters={dynamicFilters}
+                          onChange={(newPrompt) => setModifiedPrompt(newPrompt)}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleClosePromptCard}
+                      className="text-gray-400 hover:text-gray-600 p-1"
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="relative">
+                <div className="h-full">
+                  <div className=" grid grid-cols-3 gap-4 mb-4">
+                    <div
+                      onClick={() =>
+                        setTask(
+                          "Go to Flipkart and find me the cheapest laptop from Dell under INR 35000"
+                        )
+                      }
+                      className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+                        shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+                        transition-all duration-300"
+                    >
+                      <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+                        Find Budget Laptop
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Go to Flipkart and find me the cheapest laptop from Dell
+                        under INR 35000
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() =>
+                        setTask(
+                          "Find me black shirt in medium size from Meesho, Myntra and Fab India"
+                        )
+                      }
+                      className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+                        shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+                        transition-all duration-300"
+                    >
+                      <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+                        Compare Clothing
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Find me black shirt in medium size from Meesho, Myntra
+                        and Fab India
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() =>
+                        setTask(
+                          "Search for wireless noise cancelling headphones under INR 5000 on Amazon and Flipkart"
+                        )
+                      }
+                      className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+                        shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+                        transition-all duration-300"
+                    >
+                      <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+                        Compare Electronics
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Search for wireless noise cancelling headphones under
+                        INR 5000 on Amazon and Flipkart
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <textarea
+                  className="w-full h-36 p-5 rounded-lg border border-gray-200 
+                  shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-200
+                  resize-none bg-white text-sm backdrop-blur-sm
+                  shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(59,130,246,0.1)]"
+                  placeholder="Enter your task description..."
+                  value={task}
+                  onChange={(e) => setTask(e.target.value)}
+                />
+                <div className="absolute bottom-3 right-3 flex gap-2">
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="px-3 py-1.5 text-xs rounded-md border border-gray-200 bg-white text-gray-700 
+                             hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200
+                             shadow-sm backdrop-blur-sm"
+                  >
+                    {MODEL_OPTIONS.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-4">
                 <button
-                  className={`flex-1 px-6 py-3 rounded-lg 
-                  shadow-[0_2px_4px_rgba(0,0,0,0.1)]
-                  transition-colors
+                  className={`flex-1 px-5 py-2.5 rounded-lg text-sm
+                  transition-colors duration-200 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(59,130,246,0.1)]
                   ${
                     !task.trim() || isLoading
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gray-900 hover:bg-gray-800"
-                  }
-                  text-white`}
+                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                      : "bg-gray-900 hover:bg-gray-800 text-white"
+                  }`}
                   onClick={handleStartTask}
                   disabled={!task.trim() || isLoading}
                 >
-                  {isLoading ? "Processing..." : "Start Task"}
+                  {isLoading ? "Agent is at work..." : "Run Shoperator Agent"}
                 </button>
                 {isLoading && (
                   <button
-                    className="flex-1 px-6 py-3 rounded-lg bg-red-600 hover:bg-red-700 text-white shadow-[0_2px_4px_rgba(0,0,0,0.1)]"
+                    className="flex-1 px-5 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm
+                    transition-colors duration-200 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(239,68,68,0.1)]"
                     onClick={handleStopTask}
+                    disabled={isStoppingTask}
                   >
-                    Stop Task
+                    {isStoppingTask ? "Stopping Agent..." : "Stop Agent"}
                   </button>
                 )}
               </div>
@@ -620,7 +891,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <footer className="text-center text-gray-500 text-sm p-4 border-t border-gray-200">
+        <footer className="text-center text-gray-500 text-xs p-4 border-t border-gray-200">
           Shoperator v1.0 | All rights reserved by{" "}
           <a
             href="https://www.trynarrative.com"

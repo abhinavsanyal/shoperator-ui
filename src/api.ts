@@ -76,7 +76,7 @@ export const runAgent = async (task: string, clerkId: string) => {
     use_vision: true,
     max_steps: 20,
     max_actions_per_step: 3,
-    headless: false,
+    headless: true,
     tool_calling_method: "function_call",
   };
 
