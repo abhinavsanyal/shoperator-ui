@@ -149,8 +149,102 @@ export default function SessionPage() {
         const agentRun = await getAgentRun(runId);
         console.log("Agent run data:", agentRun);
 
-        // You can set the task from the agent run data
+        // Set the task from the agent run data
         setTask(agentRun.task);
+
+        // Process agent history if available
+        if (
+          agentRun.agent_history?.history &&
+          agentRun.agent_history.history.length > 0
+        ) {
+          // Transform agent history to timeline items
+          const timelineItems: TimelineItem[] =
+            agentRun.agent_history.history.flatMap((historyItem, index) => {
+              const items: TimelineItem[] = [];
+              const timestamp = new Date().toISOString(); // You may want to use a timestamp from the data if available
+
+              // Add log item for model output if available
+              if (historyItem.model_output?.current_state) {
+                const state = historyItem.model_output.current_state;
+
+                // Add thought/summary log
+                items.push({
+                  type: "log",
+                  step: index,
+                  timestamp,
+                  data: {
+                    prefix: "Summary",
+                    content: state.summary || state.thought,
+                    timestamp,
+                    step: index,
+                  },
+                });
+
+                // Add progress update
+                items.push({
+                  type: "update",
+                  step: index,
+                  timestamp,
+                  data: {
+                    memory: state.important_contents || "",
+                    task_progress: state.task_progress || "",
+                    future_plans: state.future_plans || "",
+                    step: index,
+                    timestamp,
+                  },
+                });
+              }
+
+              // Add action items if available
+              if (historyItem.model_output?.action) {
+                historyItem.model_output.action.forEach(
+                  (action, actionIndex) => {
+                    items.push({
+                      type: "action",
+                      step: index,
+                      timestamp,
+                      data: {
+                        action: JSON.stringify(action),
+                        action_number: actionIndex + 1,
+                        total_actions:
+                          historyItem.model_output?.action.length || 1,
+                        timestamp,
+                        step: index,
+                      },
+                    });
+                  }
+                );
+              }
+
+              // Add result logs if available
+              if (historyItem.result) {
+                historyItem.result.forEach((result) => {
+                  if (result.extracted_content) {
+                    items.push({
+                      type: "log",
+                      step: index,
+                      timestamp,
+                      data: {
+                        prefix: "Result",
+                        content: result.extracted_content,
+                        timestamp,
+                        step: index,
+                      },
+                    });
+                  }
+                });
+              }
+
+              return items;
+            });
+
+          setTimeline(timelineItems);
+        }
+
+        // Handle history GIF URL if available
+        if (agentRun.history_gif_url) {
+          setScreenshot(agentRun.history_gif_url);
+        }
       } catch (error) {
         console.error("Error fetching agent run:", error);
         // You might want to show an error message to the user here
@@ -590,7 +684,7 @@ export default function SessionPage() {
       <div className="w-1/3 relative flex flex-col h-full border-r border-gray-200 bg-white">
         <div
           ref={timelineContainerRef}
-          className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+          className="flex-1 overflow-y-auto px-6 py-8  mb-60 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
         >
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
