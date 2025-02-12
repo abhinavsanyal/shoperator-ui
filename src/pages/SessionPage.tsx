@@ -152,6 +152,14 @@ export default function SessionPage() {
         // Set the task from the agent run data
         setTask(agentRun.task);
 
+        // Handle history GIF URL if available and not empty
+        if (
+          agentRun.history_gif_url &&
+          agentRun.history_gif_url.trim() !== ""
+        ) {
+          setScreenshot(agentRun.history_gif_url);
+        }
+
         // Process agent history if available
         if (
           agentRun.agent_history?.history &&
@@ -239,11 +247,6 @@ export default function SessionPage() {
             });
 
           setTimeline(timelineItems);
-        }
-
-        // Handle history GIF URL if available
-        if (agentRun.history_gif_url) {
-          setScreenshot(agentRun.history_gif_url);
         }
       } catch (error) {
         console.error("Error fetching agent run:", error);
@@ -730,7 +733,11 @@ export default function SessionPage() {
       <div className="w-2/3 h-full overflow-y-auto p-6 bg-gray-50">
         {screenshot && (
           <img
-            src={`data:image/png;base64,${screenshot}`}
+            src={
+              screenshot.startsWith("http")
+                ? screenshot
+                : `data:image/png;base64,${screenshot}`
+            }
             alt="Browser Screenshot"
             className="w-full rounded-lg shadow-sm border border-gray-200"
           />
