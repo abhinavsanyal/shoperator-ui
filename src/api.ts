@@ -66,6 +66,21 @@ interface AgentErrorResponse {
   detail: string;
 }
 
+interface AgentRun {
+  _id: string;
+  clerk_id: string;
+  task: string;
+  start_time: string;
+  end_time?: string;
+  status: string;
+  // Add other fields as needed
+}
+
+interface AgentRunsResponse {
+  agent_runs: AgentRun[];
+  total: number;
+}
+
 export const runAgent = async (task: string, clerkId: string) => {
   const config: AgentConfig = {
     task,
@@ -148,6 +163,20 @@ export const getAgentId = async (
     return response.data;
   } catch (error) {
     console.error("Error getting agent ID:", error);
+    throw error;
+  }
+};
+
+export const getAgentRuns = async (
+  clerkId: string
+): Promise<AgentRunsResponse> => {
+  try {
+    const response = await axios.get<AgentRunsResponse>(
+      `${API_BASE_URL}/agent-runs/get/${clerkId}`
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error getting agent runs:", error);
     throw error;
   }
 };

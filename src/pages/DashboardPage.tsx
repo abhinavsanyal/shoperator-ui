@@ -1,6 +1,6 @@
 import { UserButton, useUser } from "@clerk/clerk-react";
 import { useState, useRef, useEffect } from "react";
-import { runAgent, stopAgent } from "../api";
+import { runAgent, stopAgent, getAgentRuns } from "../api";
 
 interface WebSocketMessage {
   type: string;
@@ -58,6 +58,21 @@ interface ApiError {
   message?: string;
 }
 
+interface AgentRun {
+  _id: string;
+  clerk_id: string;
+  task: string;
+  start_time: string;
+  end_time?: string;
+  status: string;
+  // Add other fields as needed
+}
+
+interface AgentRunsResponse {
+  agent_runs: AgentRun[];
+  total: number;
+}
+
 const MODEL_OPTIONS = ["gpt-4o-mini", "gpt-4", "o3-mini"];
 
 export default function DashboardPage() {
@@ -92,6 +107,12 @@ export default function DashboardPage() {
 
   const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
 
+  const [agentRuns, setAgentRuns] = useState<AgentRunsResponse | null>(null);
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showAllRuns, setShowAllRuns] = useState(false);
+  const MAX_VISIBLE_RUNS = 5;
+
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
@@ -100,6 +121,22 @@ export default function DashboardPage() {
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  useEffect(() => {
+    const fetchAgentRuns = async () => {
+      if (!user) return;
+
+      try {
+        const runs = await getAgentRuns(user.id);
+        setAgentRuns(runs);
+        console.log("Agent runs:", runs); // Log the runs data
+      } catch (error) {
+        console.error("Error fetching agent runs:", error);
+      }
+    };
+
+    fetchAgentRuns();
+  }, [user]);
 
   const setupWebSocket = (clientId: string) => {
     const ws = new WebSocket(`ws://localhost:3030/ws/${clientId}`);
@@ -530,6 +567,25 @@ export default function DashboardPage() {
     );
   };
 
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors = {
+      running: "bg-blue-100 text-blue-800",
+      completed: "bg-green-100 text-green-800",
+      failed: "bg-red-100 text-red-800",
+      default: "bg-gray-100 text-gray-800",
+    };
+    return colors[status as keyof typeof colors] || colors.default;
+  };
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {error && (
@@ -578,25 +634,265 @@ export default function DashboardPage() {
         </div>
       </nav>
 
-      <div className="flex-1 pt-14 px-6">
-        {isTaskActive ? (
-          <div className="flex h-[calc(100vh-3.5rem)]">
-            <div className="w-1/3 relative flex flex-col h-full border-r border-gray-200 bg-white">
-              <div
-                ref={timelineContainerRef}
-                className="h-[calc(100vh-14rem)] overflow-y-auto px-6 py-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
-              >
-                {renderGroupedTimeline()}
+      <div className="flex-1 pt-14 px-6 flex">
+        <div
+          className={`
+          fixed left-0 top-14 h-[calc(100vh-3.5rem)] bg-white border-r border-gray-200
+          transition-all duration-300 ease-in-out z-20
+          ${isSidebarOpen ? "w-80" : "w-12"}
+        `}
+        >
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="absolute -right-3 top-4 bg-white rounded-full p-1 border border-gray-200 shadow-sm"
+          >
+            <svg
+              className={`w-4 h-4 text-gray-600 transition-transform duration-300 ${
+                isSidebarOpen ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+
+          {isSidebarOpen && (
+            <div className="p-4 overflow-y-auto h-full">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4">
+                Past Sessions
+              </h2>
+
+              {!agentRuns?.agent_runs?.length ? (
+                <div className="text-center text-gray-500 mt-8">
+                  No previous sessions found
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {(showAllRuns
+                      ? agentRuns.agent_runs
+                      : agentRuns.agent_runs.slice(0, MAX_VISIBLE_RUNS)
+                    ).map((run) => (
+                      <div
+                        key={run._id}
+                        className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm 
+                                 hover:shadow-md transition-shadow duration-200 cursor-pointer"
+                      >
+                        {run.history_gif_url && (
+                          <div className="relative h-24 mb-2 rounded-md overflow-hidden bg-gray-100">
+                            <img
+                              src={run.history_gif_url}
+                              alt="Session Recording"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium text-gray-800 line-clamp-2">
+                            {run.task}
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">
+                              {formatDate(run.start_time)}
+                            </span>
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full ${getStatusColor(
+                                run.status
+                              )}`}
+                            >
+                              {run.status}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {agentRuns.agent_runs.length > MAX_VISIBLE_RUNS && (
+                    <button
+                      onClick={() => setShowAllRuns(!showAllRuns)}
+                      className="mt-4 w-full py-2 text-sm text-blue-600 hover:text-blue-700 
+                               flex items-center justify-center gap-1"
+                    >
+                      {showAllRuns ? (
+                        <>
+                          Show Less
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 15l7-7 7 7"
+                            />
+                          </svg>
+                        </>
+                      ) : (
+                        <>
+                          Show More
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M19 9l-7 7-7-7"
+                            />
+                          </svg>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div
+          className={`transition-all duration-300 ${
+            isSidebarOpen ? "ml-80" : "ml-12"
+          } flex-1`}
+        >
+          {isTaskActive ? (
+            <div className="flex h-[calc(100vh-3.5rem)]">
+              <div className="w-1/3 relative flex flex-col h-full border-r border-gray-200 bg-white">
+                <div
+                  ref={timelineContainerRef}
+                  className="h-[calc(100vh-14rem)] overflow-y-auto px-6 py-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+                >
+                  {renderGroupedTimeline()}
+                </div>
+
+                <div className="p-6 border-t border-gray-200 bg-white">
+                  {activeTaskPrompt && (
+                    <div
+                      className="absolute bottom-[70%+0.5rem] left-0 right-0 
+                                bg-white rounded-lg p-4 shadow-lg border border-gray-200 
+                                w-[calc(100%-4rem)]
+                                mx-auto
+                                animate-[slideDown_0.3s_ease-out] z-10"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1 pr-4">
+                          <div className="text-sm text-gray-500 mb-1">
+                            Current Task:
+                          </div>
+                          <div className="text-gray-700">
+                            <InteractivePrompt
+                              prompt={modifiedPrompt}
+                              filters={dynamicFilters}
+                              onChange={(newPrompt) =>
+                                setModifiedPrompt(newPrompt)
+                              }
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleClosePromptCard}
+                          className="text-gray-400 hover:text-gray-600 p-1"
+                        >
+                          <svg
+                            className="w-5 h-5"
+                            fill="none"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path d="M6 18L18 6M6 6l12 12"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <textarea
+                    className="w-full h-28 p-4 rounded-lg border border-gray-200 
+                    shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-200
+                    resize-none bg-white text-sm"
+                    value={task}
+                    onChange={(e) => setTask(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="px-2 py-1 text-xs rounded border border-gray-200 bg-white text-gray-700 
+                                 hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
+                    >
+                      {MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex gap-3 mt-3">
+                    <button
+                      className={`flex-1 px-5 py-2.5 rounded-lg text-sm
+                      ${
+                        !task.trim() || isLoading
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                          : "bg-gray-900 hover:bg-gray-800 text-white"
+                      }
+                      transition-colors duration-200`}
+                      onClick={handleStartTask}
+                      disabled={!task.trim() || isLoading}
+                    >
+                      {isLoading
+                        ? "Agent is at work..."
+                        : "Run Shoperator Agent"}
+                    </button>
+                    {isLoading && (
+                      <button
+                        className="flex-1 px-5 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm
+                        transition-colors duration-200"
+                        onClick={handleStopTask}
+                        disabled={isStoppingTask}
+                      >
+                        {isStoppingTask ? "Stopping Agent..." : "Stop Agent"}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="p-6 border-t border-gray-200 bg-white">
+              <div className="w-2/3 h-full overflow-y-auto p-6 bg-gray-50">
+                {screenshot && (
+                  <img
+                    src={`data:image/png;base64,${screenshot}`}
+                    alt="Browser Screenshot"
+                    className="w-full rounded-lg shadow-sm border border-gray-200"
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col h-full items-center justify-center p-8">
+              <div className="w-full max-w-2xl relative px-4">
                 {activeTaskPrompt && (
                   <div
-                    className="absolute bottom-[70%+0.5rem] left-0 right-0 
-                              bg-white rounded-lg p-4 shadow-lg border border-gray-200 
-                              w-[calc(100%-4rem)]
-                              mx-auto
-                              animate-[slideDown_0.3s_ease-out] z-10"
+                    className="absolute bottom-[calc(100%+0.5rem)] left-0 right-0 
+                                bg-white rounded-lg p-4 shadow-lg border border-gray-200 
+                                animate-[slideDown_0.3s_ease-out] z-10"
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1 pr-4">
@@ -632,36 +928,102 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 )}
-                <textarea
-                  className="w-full h-28 p-4 rounded-lg border border-gray-200 
-                  shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-200
-                  resize-none bg-white text-sm"
-                  value={task}
-                  onChange={(e) => setTask(e.target.value)}
-                />
-                <div className="flex gap-2">
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="px-2 py-1 text-xs rounded border border-gray-200 bg-white text-gray-700 
-                               hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200"
-                  >
-                    {MODEL_OPTIONS.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
+                <div className="relative">
+                  <div className="h-full">
+                    <div className=" grid grid-cols-3 gap-4 mb-4">
+                      <div
+                        onClick={() =>
+                          setTask(
+                            "Go to Flipkart and find me the cheapest laptop from Dell under INR 35000"
+                          )
+                        }
+                        className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+                          shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+                          transition-all duration-300"
+                      >
+                        <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+                          Find Budget Laptop
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Go to Flipkart and find me the cheapest laptop from
+                          Dell under INR 35000
+                        </p>
+                      </div>
+
+                      <div
+                        onClick={() =>
+                          setTask(
+                            "Find me black shirt in medium size from Meesho, Myntra and Fab India"
+                          )
+                        }
+                        className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+                          shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+                          transition-all duration-300"
+                      >
+                        <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+                          Compare Clothing
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Find me black shirt in medium size from Meesho, Myntra
+                          and Fab India
+                        </p>
+                      </div>
+
+                      <div
+                        onClick={() =>
+                          setTask(
+                            "Search for wireless noise cancelling headphones under INR 5000 on Amazon and Flipkart"
+                          )
+                        }
+                        className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+                          shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+                          transition-all duration-300"
+                      >
+                        <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+                          Compare Electronics
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Search for wireless noise cancelling headphones under
+                          INR 5000 on Amazon and Flipkart
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <textarea
+                    className="w-full h-36 p-5 rounded-lg border border-gray-200 
+                    shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-200
+                    resize-none bg-white text-sm backdrop-blur-sm
+                    shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(59,130,246,0.1)]"
+                    placeholder="Enter your task description..."
+                    value={task}
+                    onChange={(e) => setTask(e.target.value)}
+                  />
+                  <div className="absolute bottom-3 right-3 flex gap-2">
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="px-3 py-1.5 text-xs rounded-md border border-gray-200 bg-white text-gray-700 
+                               hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200
+                               shadow-sm backdrop-blur-sm"
+                    >
+                      {MODEL_OPTIONS.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div className="flex gap-3 mt-3">
+                <div className="flex gap-3 mt-4">
                   <button
                     className={`flex-1 px-5 py-2.5 rounded-lg text-sm
+                    transition-colors duration-200 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(59,130,246,0.1)]
                     ${
                       !task.trim() || isLoading
                         ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                         : "bg-gray-900 hover:bg-gray-800 text-white"
-                    }
-                    transition-colors duration-200`}
+                    }`}
                     onClick={handleStartTask}
                     disabled={!task.trim() || isLoading}
                   >
@@ -670,7 +1032,7 @@ export default function DashboardPage() {
                   {isLoading && (
                     <button
                       className="flex-1 px-5 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm
-                      transition-colors duration-200"
+                    transition-colors duration-200 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(239,68,68,0.1)]"
                       onClick={handleStopTask}
                       disabled={isStoppingTask}
                     >
@@ -678,229 +1040,68 @@ export default function DashboardPage() {
                     </button>
                   )}
                 </div>
-              </div>
-            </div>
 
-            <div className="w-2/3 h-full overflow-y-auto p-6 bg-gray-50">
-              {screenshot && (
-                <img
-                  src={`data:image/png;base64,${screenshot}`}
-                  alt="Browser Screenshot"
-                  className="w-full rounded-lg shadow-sm border border-gray-200"
-                />
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col h-full items-center justify-center p-8">
-            <div className="w-full max-w-2xl relative px-4">
-              {activeTaskPrompt && (
-                <div
-                  className="absolute bottom-[calc(100%+0.5rem)] left-0 right-0 
-                              bg-white rounded-lg p-4 shadow-lg border border-gray-200 
-                              animate-[slideDown_0.3s_ease-out] z-10"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 pr-4">
-                      <div className="text-sm text-gray-500 mb-1">
-                        Current Task:
-                      </div>
-                      <div className="text-gray-700">
-                        <InteractivePrompt
-                          prompt={modifiedPrompt}
-                          filters={dynamicFilters}
-                          onChange={(newPrompt) => setModifiedPrompt(newPrompt)}
-                        />
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleClosePromptCard}
-                      className="text-gray-400 hover:text-gray-600 p-1"
-                    >
-                      <svg
-                        className="w-5 h-5"
-                        fill="none"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path d="M6 18L18 6M6 6l12 12"></path>
-                      </svg>
-                    </button>
+                {screenshot && (
+                  <div className="mt-8">
+                    <img
+                      src={`data:image/png;base64,${screenshot}`}
+                      alt="Agent Screenshot"
+                      className="w-full rounded-lg shadow-lg"
+                    />
                   </div>
-                </div>
-              )}
-              <div className="relative">
-                <div className="h-full">
-                  <div className=" grid grid-cols-3 gap-4 mb-4">
-                    <div
-                      onClick={() =>
-                        setTask(
-                          "Go to Flipkart and find me the cheapest laptop from Dell under INR 35000"
-                        )
-                      }
-                      className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
-                        shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
-                        transition-all duration-300"
-                    >
-                      <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
-                        Find Budget Laptop
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Go to Flipkart and find me the cheapest laptop from Dell
-                        under INR 35000
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() =>
-                        setTask(
-                          "Find me black shirt in medium size from Meesho, Myntra and Fab India"
-                        )
-                      }
-                      className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
-                        shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
-                        transition-all duration-300"
-                    >
-                      <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
-                        Compare Clothing
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Find me black shirt in medium size from Meesho, Myntra
-                        and Fab India
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() =>
-                        setTask(
-                          "Search for wireless noise cancelling headphones under INR 5000 on Amazon and Flipkart"
-                        )
-                      }
-                      className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
-                        shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
-                        transition-all duration-300"
-                    >
-                      <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
-                        Compare Electronics
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Search for wireless noise cancelling headphones under
-                        INR 5000 on Amazon and Flipkart
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <textarea
-                  className="w-full h-36 p-5 rounded-lg border border-gray-200 
-                  shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-200
-                  resize-none bg-white text-sm backdrop-blur-sm
-                  shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(59,130,246,0.1)]"
-                  placeholder="Enter your task description..."
-                  value={task}
-                  onChange={(e) => setTask(e.target.value)}
-                />
-                <div className="absolute bottom-3 right-3 flex gap-2">
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="px-3 py-1.5 text-xs rounded-md border border-gray-200 bg-white text-gray-700 
-                             hover:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-200
-                             shadow-sm backdrop-blur-sm"
-                  >
-                    {MODEL_OPTIONS.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="flex gap-3 mt-4">
-                <button
-                  className={`flex-1 px-5 py-2.5 rounded-lg text-sm
-                  transition-colors duration-200 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(59,130,246,0.1)]
-                  ${
-                    !task.trim() || isLoading
-                      ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                      : "bg-gray-900 hover:bg-gray-800 text-white"
-                  }`}
-                  onClick={handleStartTask}
-                  disabled={!task.trim() || isLoading}
-                >
-                  {isLoading ? "Agent is at work..." : "Run Shoperator Agent"}
-                </button>
-                {isLoading && (
-                  <button
-                    className="flex-1 px-5 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm
-                    transition-colors duration-200 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1),0_0_8px_0_rgba(239,68,68,0.1)]"
-                    onClick={handleStopTask}
-                    disabled={isStoppingTask}
-                  >
-                    {isStoppingTask ? "Stopping Agent..." : "Stop Agent"}
-                  </button>
                 )}
-              </div>
 
-              {screenshot && (
-                <div className="mt-8">
-                  <img
-                    src={`data:image/png;base64,${screenshot}`}
-                    alt="Agent Screenshot"
-                    className="w-full rounded-lg shadow-lg"
-                  />
-                </div>
-              )}
-
-              {isLoading && (
-                <div className="mt-8 w-full">
-                  <div className="bg-white p-6 rounded-lg shadow-lg">
-                    <div className="mb-4">
-                      <h3 className="text-lg font-semibold mb-2">Progress</h3>
-                      <p className="text-gray-600">Step {agentProgress.step}</p>
-                      <p className="text-gray-600">
-                        {agentProgress.taskProgress}
-                      </p>
-                    </div>
-
-                    {agentProgress.memory && (
+                {isLoading && (
+                  <div className="mt-8 w-full">
+                    <div className="bg-white p-6 rounded-lg shadow-lg">
                       <div className="mb-4">
-                        <h3 className="text-lg font-semibold mb-2">Memory</h3>
-                        <p className="text-gray-600">{agentProgress.memory}</p>
-                      </div>
-                    )}
-
-                    {agentProgress.futurePlans && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-2">
-                          Next Steps
-                        </h3>
+                        <h3 className="text-lg font-semibold mb-2">Progress</h3>
                         <p className="text-gray-600">
-                          {agentProgress.futurePlans}
+                          Step {agentProgress.step}
+                        </p>
+                        <p className="text-gray-600">
+                          {agentProgress.taskProgress}
                         </p>
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        <footer className="text-center text-gray-500 text-xs p-4 border-t border-gray-200">
-          Shoperator v1.0 | All rights reserved by{" "}
-          <a
-            href="https://www.trynarrative.com"
-            target="_blank"
-            className="text-gray-800"
-          >
-            Narrative AI
-          </a>{" "}
-          | @copyright 2025
-        </footer>
+                      {agentProgress.memory && (
+                        <div className="mb-4">
+                          <h3 className="text-lg font-semibold mb-2">Memory</h3>
+                          <p className="text-gray-600">
+                            {agentProgress.memory}
+                          </p>
+                        </div>
+                      )}
+
+                      {agentProgress.futurePlans && (
+                        <div>
+                          <h3 className="text-lg font-semibold mb-2">
+                            Next Steps
+                          </h3>
+                          <p className="text-gray-600">
+                            {agentProgress.futurePlans}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <footer className="text-center text-gray-500 text-xs p-4 border-t border-gray-200">
+            Shoperator v1.0 | All rights reserved by{" "}
+            <a
+              href="https://www.trynarrative.com"
+              target="_blank"
+              className="text-gray-800"
+            >
+              Narrative AI
+            </a>{" "}
+            | @copyright 2025
+          </footer>
+        </div>
       </div>
     </div>
   );
