@@ -1,4 +1,5 @@
 import axios from "axios";
+import { DynamicFilters } from "./types";
 
 const API_BASE_URL = "http://127.0.0.1:3030";
 
@@ -54,6 +55,10 @@ interface AgentHistory {
 interface AgentRunResponse {
   message: string;
   client_id: string;
+  run_id: string;
+  status: string;
+  task: string;
+  dynamic_filters: DynamicFilters;
 }
 
 interface AgentIdResponse {
@@ -81,7 +86,20 @@ interface AgentRunsResponse {
   total: number;
 }
 
-export const runAgent = async (task: string, clerkId: string) => {
+interface AgentRunDetails {
+  _id: string;
+  clerk_id: string;
+  task: string;
+  start_time: string;
+  end_time?: string;
+  status: string;
+  // Add other fields as needed
+}
+
+export const runAgent = async (
+  task: string,
+  clerkId: string
+): Promise<AgentRunResponse> => {
   const config: AgentConfig = {
     task,
     agent_type: "custom",
@@ -177,6 +195,23 @@ export const getAgentRuns = async (
     return response.data;
   } catch (error) {
     console.error("Error getting agent runs:", error);
+    throw error;
+  }
+};
+
+export const getAgentRun = async (
+  agentRunId: string
+): Promise<AgentRunDetails> => {
+  try {
+    const response = await axios.get<AgentRunDetails>(
+      `${API_BASE_URL}/agent-run/get/${agentRunId}`
+    );
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      throw new Error(`Agent run with ID ${agentRunId} not found`);
+    }
+    console.error("Error fetching agent run:", error);
     throw error;
   }
 };
