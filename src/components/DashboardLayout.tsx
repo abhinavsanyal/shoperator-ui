@@ -155,43 +155,46 @@ export default function DashboardLayout() {
                     {(showAllRuns
                       ? agentRuns.agent_runs
                       : agentRuns.agent_runs.slice(0, MAX_VISIBLE_RUNS)
-                    ).map((run) => (
-                      <div
-                        key={run._id}
-                        onClick={() => navigate(`/session/${run._id}`)}
-                        className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm 
-                                 hover:shadow-md transition-shadow duration-200 cursor-pointer"
-                      >
-                        {run.history_gif_url && (
-                          <div className="relative h-24 mb-2 rounded-md overflow-hidden bg-gray-100">
-                            <img
-                              src={run.history_gif_url}
-                              alt="Session Recording"
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                        )}
+                    ).map((run) => {
+                      console.log("Agent Run:", run);
+                      return (
+                        <div
+                          key={run._id}
+                          onClick={() => navigate(`/session/${run._id}`)}
+                          className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm 
+                                   hover:shadow-md transition-shadow duration-200 cursor-pointer"
+                        >
+                          {run.history_gif_url && (
+                            <div className="relative h-24 mb-2 rounded-md overflow-hidden bg-gray-100">
+                              <img
+                                src={run.history_gif_url}
+                                alt="Session Recording"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
 
-                        <div className="space-y-1">
-                          <div className="text-sm font-medium text-gray-800 line-clamp-2">
-                            {run.task}
-                          </div>
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium text-gray-800 line-clamp-2">
+                              {run.task}
+                            </div>
 
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-500">
-                              {formatDate(run.start_time)}
-                            </span>
-                            <span
-                              className={`text-xs px-2 py-1 rounded-full ${getStatusColor(
-                                run.status
-                              )}`}
-                            >
-                              {run.status}
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-500">
+                                {formatDate(run.start_time)}
+                              </span>
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full ${getStatusColor(
+                                  run.status
+                                )}`}
+                              >
+                                {run.status}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {agentRuns.agent_runs.length > MAX_VISIBLE_RUNS && (
@@ -253,4 +256,4 @@ export default function DashboardLayout() {
       </div>
     </div>
   );
-} 
+}

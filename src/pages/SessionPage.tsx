@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable no-case-declarations */
+import { useState, useRef, useEffect, JSX } from "react";
 import { useParams } from "react-router-dom";
 import { stopAgent, getAgentRun } from "../api";
 import {
@@ -38,6 +40,12 @@ export default function SessionPage() {
   const [collapsedSteps, setCollapsedSteps] = useState<Record<string, boolean>>(
     {}
   );
+
+  // Add new state for active tab
+  const [activeTab, setActiveTab] = useState<"screenshot" | "recording">(
+    "screenshot"
+  );
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
 
   const setupWebSocket = (clientId: string) => {
     const ws = new WebSocket(`ws://localhost:3030/ws/${clientId}`);
@@ -160,6 +168,11 @@ export default function SessionPage() {
           setScreenshot(agentRun.history_gif_url);
         }
 
+        // Handle recording URL if available
+        if (agentRun.recording_url && agentRun.recording_url.trim() !== "") {
+          setRecordingUrl(agentRun.recording_url);
+        }
+
         // Process agent history if available
         if (
           agentRun.agent_history?.history &&
@@ -167,84 +180,94 @@ export default function SessionPage() {
         ) {
           // Transform agent history to timeline items
           const timelineItems: TimelineItem[] =
-            agentRun.agent_history.history.flatMap((historyItem, index) => {
-              const items: TimelineItem[] = [];
-              const timestamp = new Date().toISOString(); // You may want to use a timestamp from the data if available
+            agentRun.agent_history.history.flatMap(
+              (
+                historyItem: {
+                  model_output: { current_state: any; action: any[] };
+                  result: any[];
+                },
+                index: any
+              ) => {
+                const items: TimelineItem[] = [];
+                const timestamp = new Date().toISOString(); // You may want to use a timestamp from the data if available
 
-              // Add log item for model output if available
-              if (historyItem.model_output?.current_state) {
-                const state = historyItem.model_output.current_state;
+                // Add log item for model output if available
+                if (historyItem.model_output?.current_state) {
+                  const state = historyItem.model_output.current_state;
 
-                // Add thought/summary log
-                items.push({
-                  type: "log",
-                  step: index,
-                  timestamp,
-                  data: {
-                    prefix: "Summary",
-                    content: state.summary || state.thought,
-                    timestamp,
-                    step: index,
-                  },
-                });
-
-                // Add progress update
-                items.push({
-                  type: "update",
-                  step: index,
-                  timestamp,
-                  data: {
-                    memory: state.important_contents || "",
-                    task_progress: state.task_progress || "",
-                    future_plans: state.future_plans || "",
+                  // Add thought/summary log
+                  items.push({
+                    type: "log",
                     step: index,
                     timestamp,
-                  },
-                });
-              }
+                    data: {
+                      prefix: "Summary",
+                      content: state.summary || state.thought,
+                      timestamp,
+                      step: index,
+                    },
+                  });
 
-              // Add action items if available
-              if (historyItem.model_output?.action) {
-                historyItem.model_output.action.forEach(
-                  (action, actionIndex) => {
-                    items.push({
-                      type: "action",
+                  // Add progress update
+                  items.push({
+                    type: "update",
+                    step: index,
+                    timestamp,
+                    data: {
+                      memory: state.important_contents || "",
+                      task_progress: state.task_progress || "",
+                      future_plans: state.future_plans || "",
                       step: index,
                       timestamp,
-                      data: {
-                        action: JSON.stringify(action),
-                        action_number: actionIndex + 1,
-                        total_actions:
-                          historyItem.model_output?.action.length || 1,
-                        timestamp,
-                        step: index,
-                      },
-                    });
-                  }
-                );
-              }
+                    },
+                  });
+                }
 
-              // Add result logs if available
-              if (historyItem.result) {
-                historyItem.result.forEach((result) => {
-                  if (result.extracted_content) {
-                    items.push({
-                      type: "log",
-                      step: index,
-                      timestamp,
-                      data: {
-                        prefix: "Result",
-                        content: result.extracted_content,
-                        timestamp,
+                // Add action items if available
+                if (historyItem.model_output?.action) {
+                  historyItem.model_output.action.forEach(
+                    (action: any, actionIndex: number) => {
+                      items.push({
+                        type: "action",
                         step: index,
-                      },
-                    });
-                  }
-                });
-              }
+                        timestamp,
+                        data: {
+                          action: JSON.stringify(action),
+                          action_number: actionIndex + 1,
+                          total_actions:
+                            historyItem.model_output?.action.length || 1,
+                          timestamp,
+                          step: index,
+                        },
+                      });
+                    }
+                  );
+                }
 
-              return items;
-            });
+                // Add result logs if available
+                if (historyItem.result) {
+                  historyItem.result.forEach(
+                    (result: { extracted_content: never }) => {
+                      if (result.extracted_content) {
+                        items.push({
+                          type: "log",
+                          step: index,
+                          timestamp,
+                          data: {
+                            prefix: "Result",
+                            content: result.extracted_content,
+                            timestamp,
+                            step: index,
+                          },
+                        });
+                      }
+                    }
+                  );
+                }
+
+                return items;
+              }
+            );
 
           setTimeline(timelineItems);
         }
@@ -580,7 +603,7 @@ export default function SessionPage() {
     if (!Object.keys(dynamicFilters).length) return null;
 
     const renderInteractiveText = () => {
-      let taskText = task;
+      const taskText = task;
       const filterWords = Object.keys(dynamicFilters);
 
       // Sort by length in descending order to handle longer phrases first
@@ -731,17 +754,82 @@ export default function SessionPage() {
       </div>
 
       <div className="w-2/3 h-full overflow-y-auto p-6 bg-gray-50">
-        {screenshot && (
-          <img
-            src={
-              screenshot.startsWith("http")
-                ? screenshot
-                : `data:image/png;base64,${screenshot}`
-            }
-            alt="Browser Screenshot"
-            className="w-full rounded-lg shadow-sm border border-gray-200"
-          />
-        )}
+        <div className="max-w-5xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+            {/* Browser Chrome UI */}
+            <div className="bg-gray-100 border-b border-gray-200">
+              {/* Window Controls */}
+              <div className="flex items-center px-4 py-2">
+                <div className="flex space-x-2">
+                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                </div>
+
+                {/* Browser Tabs */}
+                <div className="flex ml-6 space-x-2">
+                  <button
+                    onClick={() => setActiveTab("screenshot")}
+                    className={`px-4 py-1 text-sm rounded-t-lg transition-colors flex items-center gap-2
+                      ${
+                        activeTab === "screenshot"
+                          ? "bg-white text-gray-800"
+                          : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                      }`}
+                  >
+                    {screenshot?.startsWith("http") ? (
+                      "Stepwise Summary"
+                    ) : (
+                      <>
+                        Live Session
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                      </>
+                    )}
+                  </button>
+
+                  {recordingUrl && (
+                    <button
+                      onClick={() => setActiveTab("recording")}
+                      className={`px-4 py-1 text-sm rounded-t-lg transition-colors
+                        ${
+                          activeTab === "recording"
+                            ? "bg-white text-gray-800"
+                            : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                        }`}
+                    >
+                      Recording
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="bg-white p-4">
+              {activeTab === "screenshot" && screenshot && (
+                <img
+                  src={
+                    screenshot.startsWith("http")
+                      ? screenshot
+                      : `data:image/png;base64,${screenshot}`
+                  }
+                  alt="Browser Screenshot"
+                  className="w-full rounded-lg"
+                />
+              )}
+
+              {activeTab === "recording" && recordingUrl && (
+                <video
+                  controls
+                  className="w-full rounded-lg"
+                  src={recordingUrl}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
