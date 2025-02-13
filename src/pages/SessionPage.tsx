@@ -47,6 +47,12 @@ export default function SessionPage() {
   );
   const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
 
+  const [generatedUi, setGeneratedUi] = useState<string | null>(null);
+  const [loadingResults, setLoadingResults] = useState(false);
+
+  // Add new state for agent status
+  const [agentStatus, setAgentStatus] = useState<string>("");
+
   const setupWebSocket = (clientId: string) => {
     const ws = new WebSocket(`ws://localhost:3030/ws/${clientId}`);
 
@@ -157,6 +163,11 @@ export default function SessionPage() {
         const agentRun = await getAgentRun(runId);
         console.log("Agent run data:", agentRun);
 
+        // Set the agent status
+        if (agentRun.status) {
+          setAgentStatus(agentRun.status);
+        }
+
         // Set the task from the agent run data
         setTask(agentRun.task);
 
@@ -171,6 +182,12 @@ export default function SessionPage() {
         // Handle recording URL if available
         if (agentRun.recording_url && agentRun.recording_url.trim() !== "") {
           setRecordingUrl(agentRun.recording_url);
+        }
+
+        // Handle generated UI if available
+        if (agentRun.generated_ui && agentRun.generated_ui.trim() !== "") {
+          setGeneratedUi(agentRun.generated_ui);
+          console.log("generatedUi:L  mount :::", agentRun.generated_ui);
         }
 
         // Process agent history if available
@@ -280,6 +297,130 @@ export default function SessionPage() {
     fetchAgentRun();
   }, [runId]);
 
+  const handleAgentFinished = async () => {
+    if (!runId) return;
+
+    try {
+      const agentRun = await getAgentRun(runId);
+      console.log("Final agent run data:", agentRun);
+
+      // Update screenshot/GIF if available
+      if (agentRun.history_gif_url && agentRun.history_gif_url.trim() !== "") {
+        setScreenshot(agentRun.history_gif_url);
+      }
+
+      // Update recording URL if available
+      if (agentRun.recording_url && agentRun.recording_url.trim() !== "") {
+        setRecordingUrl(agentRun.recording_url);
+      }
+
+      // Handle generated UI if available
+      if (agentRun.generated_ui && agentRun.generated_ui.trim() !== "") {
+        setGeneratedUi(agentRun.generated_ui);
+      }
+
+      // Process final agent history
+      if (
+        agentRun.agent_history?.history &&
+        agentRun.agent_history.history.length > 0
+      ) {
+        const timelineItems: TimelineItem[] =
+          agentRun.agent_history.history.flatMap(
+            (
+              historyItem: {
+                model_output: { current_state: any; action: any[] };
+                result: any[];
+              },
+              index: any
+            ) => {
+              const items: TimelineItem[] = [];
+              const timestamp = new Date().toISOString(); // You may want to use a timestamp from the data if available
+
+              // Add log item for model output if available
+              if (historyItem.model_output?.current_state) {
+                const state = historyItem.model_output.current_state;
+
+                // Add thought/summary log
+                items.push({
+                  type: "log",
+                  step: index,
+                  timestamp,
+                  data: {
+                    prefix: "Summary",
+                    content: state.summary || state.thought,
+                    timestamp,
+                    step: index,
+                  },
+                });
+
+                // Add progress update
+                items.push({
+                  type: "update",
+                  step: index,
+                  timestamp,
+                  data: {
+                    memory: state.important_contents || "",
+                    task_progress: state.task_progress || "",
+                    future_plans: state.future_plans || "",
+                    step: index,
+                    timestamp,
+                  },
+                });
+              }
+
+              // Add action items if available
+              if (historyItem.model_output?.action) {
+                historyItem.model_output.action.forEach(
+                  (action: any, actionIndex: number) => {
+                    items.push({
+                      type: "action",
+                      step: index,
+                      timestamp,
+                      data: {
+                        action: JSON.stringify(action),
+                        action_number: actionIndex + 1,
+                        total_actions:
+                          historyItem.model_output?.action.length || 1,
+                        timestamp,
+                        step: index,
+                      },
+                    });
+                  }
+                );
+              }
+
+              // Add result logs if available
+              if (historyItem.result) {
+                historyItem.result.forEach(
+                  (result: { extracted_content: never }) => {
+                    if (result.extracted_content) {
+                      items.push({
+                        type: "log",
+                        step: index,
+                        timestamp,
+                        data: {
+                          prefix: "Result",
+                          content: result.extracted_content,
+                          timestamp,
+                          step: index,
+                        },
+                      });
+                    }
+                  }
+                );
+              }
+
+              return items;
+            }
+          );
+
+        setTimeline(timelineItems);
+      }
+    } catch (error) {
+      console.error("Error fetching final agent run state:", error);
+    }
+  };
+
   const handleWebSocketMessage = (data: WebSocketMessage) => {
     switch (data.type) {
       case "browser_screenshot":
@@ -350,9 +491,25 @@ export default function SessionPage() {
         break;
 
       case "agent_status":
-        if (data.data?.status === "completed") {
-          setIsLoading(false);
+        if (data.data?.status) {
+          setAgentStatus(data.data.status);
         }
+        if (
+          data.data?.status === "completed" ||
+          data.data?.status === "failed"
+        ) {
+          setIsLoading(false);
+          setIsStoppingTask(false);
+          setLoadingResults(true);
+          console.log("Agent run completed with status:", data.data?.status);
+        }
+        break;
+
+      case "agent_finished":
+        setIsLoading(false);
+        setLoadingResults(false);
+        console.log("Agent run finished");
+        handleAgentFinished();
         break;
 
       default:
@@ -502,6 +659,15 @@ export default function SessionPage() {
   };
 
   const renderGroupedTimeline = () => {
+    if (timeline.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full">
+          <div className="w-8 h-8 border-4 border-gray-300 border-t-gray-800 rounded-full animate-spin mb-4"></div>
+          <div className="text-gray-600 font-medium">Loading Session</div>
+        </div>
+      );
+    }
+
     const groupedByStep = timeline.reduce((acc, item) => {
       const step = item.step || 0;
       if (!acc[step]) acc[step] = [];
@@ -606,68 +772,108 @@ export default function SessionPage() {
       const taskText = task;
       const filterWords = Object.keys(dynamicFilters);
 
-      // Sort by length in descending order to handle longer phrases first
-      filterWords.sort((a, b) => b.length - a.length);
+      // Create an array of all matches with their positions
+      const matches = filterWords.reduce(
+        (acc: { word: string; start: number; end: number }[], word) => {
+          let pos = 0;
+          const wordLower = word.toLowerCase();
+          const textLower = taskText.toLowerCase();
 
-      // Create segments with interactive spans
+          while ((pos = textLower.indexOf(wordLower, pos)) !== -1) {
+            acc.push({
+              word,
+              start: pos,
+              end: pos + word.length,
+            });
+            pos += 1;
+          }
+          return acc;
+        },
+        []
+      );
+
+      // Sort matches by position and length (longer matches first for same position)
+      matches.sort((a, b) => {
+        if (a.start === b.start) {
+          return b.end - b.end; // Longer match first
+        }
+        return a.start - b.start;
+      });
+
+      // Filter out overlapping matches
+      const filteredMatches = matches.reduce((acc: typeof matches, match) => {
+        const hasOverlap = acc.some(
+          (m) =>
+            (match.start >= m.start && match.start < m.end) ||
+            (match.end > m.start && match.end <= m.end)
+        );
+        if (!hasOverlap) {
+          acc.push(match);
+        }
+        return acc;
+      }, []);
+
+      // Sort by position
+      filteredMatches.sort((a, b) => a.start - b.start);
+
+      // Build segments
       const segments: JSX.Element[] = [];
       let lastIndex = 0;
 
-      filterWords.forEach((word) => {
-        const wordIndex = taskText.toLowerCase().indexOf(word.toLowerCase());
-        if (wordIndex !== -1) {
-          // Add text before the word
-          if (wordIndex > lastIndex) {
-            segments.push(
-              <span key={`text-${lastIndex}`}>
-                {taskText.slice(lastIndex, wordIndex)}
-              </span>
-            );
-          }
-
-          // Add the interactive word
-          const actualWord = taskText.slice(wordIndex, wordIndex + word.length);
+      filteredMatches.forEach((match) => {
+        // Add text before the match
+        if (match.start > lastIndex) {
           segments.push(
-            <div key={`filter-${word}`} className="relative inline-block group">
-              <span
-                className="cursor-pointer px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100
-                           hover:bg-blue-100 transition-colors duration-150"
-              >
-                {actualWord}
-              </span>
-              {/* Dropdown */}
-              <div
-                className="absolute left-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 
-                            opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50"
-              >
-                <div className="p-2">
-                  <div className="text-xs font-medium text-gray-500 mb-1 px-2">
-                    Replace with:
-                  </div>
-                  {dynamicFilters[word].map((option) => (
-                    <button
-                      key={option}
-                      className="w-full text-left px-2 py-1.5 text-sm text-gray-700 hover:bg-blue-50 rounded-md
-                               hover:text-blue-700 transition-colors duration-150"
-                      onClick={() => {
-                        const newPrompt = task.replace(
-                          new RegExp(word, "i"),
-                          option
-                        );
-                        setModifiedPrompt(newPrompt);
-                        setActiveTaskPrompt(newPrompt);
-                      }}
-                    >
-                      {option}
-                    </button>
-                  ))}
+            <span key={`text-${lastIndex}`}>
+              {taskText.slice(lastIndex, match.start)}
+            </span>
+          );
+        }
+
+        // Add the interactive word
+        const actualWord = taskText.slice(match.start, match.end);
+        segments.push(
+          <div
+            key={`filter-${match.start}`}
+            className="relative inline-block group"
+          >
+            <span
+              className="cursor-pointer px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100
+                         hover:bg-blue-100 transition-colors duration-150"
+            >
+              {actualWord}
+            </span>
+            <div
+              className="absolute left-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 
+                        opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50"
+            >
+              <div className="p-2">
+                <div className="text-xs font-medium text-gray-500 mb-1 px-2">
+                  Replace with:
                 </div>
+                {dynamicFilters[match.word].map((option) => (
+                  <button
+                    key={option}
+                    className="w-full text-left px-2 py-1.5 text-sm text-gray-700 hover:bg-blue-50 rounded-md
+                             hover:text-blue-700 transition-colors duration-150"
+                    onClick={() => {
+                      const newPrompt = task.replace(
+                        new RegExp(match.word, "i"),
+                        option
+                      );
+                      setModifiedPrompt(newPrompt);
+                      setActiveTaskPrompt(newPrompt);
+                    }}
+                  >
+                    {option}
+                  </button>
+                ))}
               </div>
             </div>
-          );
+          </div>
+        );
 
-          lastIndex = wordIndex + word.length;
-        }
+        lastIndex = match.end;
       });
 
       // Add remaining text
@@ -686,6 +892,20 @@ export default function SessionPage() {
           {activeTaskPrompt && (
             <div className="mb-3 p-3 bg-blue-50 border border-blue-100 rounded-lg">
               <div className="text-sm text-blue-700">{activeTaskPrompt}</div>
+              <button
+                className="mt-2 w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 
+                           text-white text-sm font-medium rounded-md transition-colors 
+                           duration-150 flex items-center justify-center"
+                onClick={() => {
+                  // Here you would add the logic to run the new task
+                  console.log(
+                    "Running new task with prompt:",
+                    activeTaskPrompt
+                  );
+                }}
+              >
+                Run new task
+              </button>
             </div>
           )}
 
@@ -725,8 +945,13 @@ export default function SessionPage() {
 
         <div className="p-4 border-t border-gray-200 bg-white relative z-20">
           <button
-            className="w-full px-5 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 text-sm
-              transition-colors duration-200 shadow-sm hover:shadow-md"
+            className={`w-full px-5 py-2.5 rounded-lg text-sm
+              transition-colors duration-200 shadow-sm hover:shadow-md
+              ${
+                agentStatus === "completed"
+                  ? "bg-green-50 text-green-600 hover:bg-green-100 cursor-not-allowed"
+                  : "bg-red-50 text-red-600 hover:bg-red-100"
+              }`}
             onClick={async () => {
               setIsStoppingTask(true);
               try {
@@ -739,9 +964,11 @@ export default function SessionPage() {
                 setIsStoppingTask(false);
               }
             }}
-            disabled={isStoppingTask}
+            disabled={isStoppingTask || agentStatus === "completed"}
           >
-            {isStoppingTask ? (
+            {agentStatus === "completed" ? (
+              "Agent has completed the task"
+            ) : isStoppingTask ? (
               <div className="flex items-center justify-center gap-2">
                 <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
                 <span>Stopping Agent...</span>
@@ -829,6 +1056,32 @@ export default function SessionPage() {
               )}
             </div>
           </div>
+          {/* Results */}
+          {(loadingResults || generatedUi) && (
+            <div className="mt-40 border-t border-gray-200 pt-6">
+              {loadingResults ? (
+                <div className="flex flex-col items-center justify-center p-8">
+                  <div className="w-8 h-8 border-4 border-gray-300 border-t-gray-800 rounded-full animate-spin mb-4"></div>
+                  <div className="text-gray-600 font-medium">
+                    Loading Results...
+                  </div>
+                </div>
+              ) : generatedUi ? (
+                <div
+                  className="prose max-w-none"
+                  dangerouslySetInnerHTML={{ __html: generatedUi }}
+                />
+              ) : null}
+            </div>
+          )}
+
+          {generatedUi && (
+            <div>generatedUi</div>
+            // <div
+            //   className="prose max-w-none"
+            //   dangerouslySetInnerHTML={{ __html: generatedUi }}
+            // />
+          )}
         </div>
       </div>
     </div>

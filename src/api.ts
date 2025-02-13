@@ -107,8 +107,8 @@ export const runAgent = async (
     llm_model_name: "gpt-4o-mini",
     llm_temperature: 0.2,
     use_vision: true,
-    max_steps: 2,
-    max_actions_per_step: 3,
+    max_steps: 20,
+    max_actions_per_step: 5,
     headless: true,
     tool_calling_method: "function_call",
   };

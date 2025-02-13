@@ -73,7 +73,7 @@ export default function DashboardLayout() {
         >
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="absolute -right-3 top-4 bg-white rounded-full p-1 border border-gray-200 shadow-sm"
+            className="absolute -right-3 top-1/2 transform -translate-y-1/2 bg-white rounded-full p-1 border border-gray-200 shadow-sm"
           >
             <svg
               className={`w-4 h-4 text-gray-600 transition-transform duration-300 ${

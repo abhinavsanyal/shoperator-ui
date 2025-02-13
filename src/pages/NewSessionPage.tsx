@@ -96,7 +96,43 @@ export default function NewSessionPage() {
             </p>
           </div>
 
-          {/* Add other example cards here */}
+          <div
+            onClick={() =>
+              setTask(
+                "Compare black medium-sized formal shirts for men across Amazon, Flipkart, and Ajio. Find the best rated ones under INR 1500"
+              )
+            }
+            className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+              shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+              transition-all duration-300"
+          >
+            <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+              Compare Formal Shirts
+            </h3>
+            <p className="text-sm text-gray-600">
+              Compare black medium-sized formal shirts for men across Amazon,
+              Flipkart, and Ajio
+            </p>
+          </div>
+
+          <div
+            onClick={() =>
+              setTask(
+                "Find the best-selling wireless earbuds on Amazon India under INR 2000 with at least 4-star rating"
+              )
+            }
+            className="cursor-pointer group p-4 bg-white rounded-xl border border-gray-100
+              shadow-[0_4px_20px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.12)]
+              transition-all duration-300"
+          >
+            <h3 className="font-bold text-gray-800 mb-2 text-lg group-hover:text-blue-600 transition-colors">
+              Best Budget Earbuds
+            </h3>
+            <p className="text-sm text-gray-600">
+              Find the best-selling wireless earbuds on Amazon India under INR
+              2000
+            </p>
+          </div>
         </div>
 
         <div className="relative">
