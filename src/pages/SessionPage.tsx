@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-case-declarations */
 import { useState, useRef, useEffect, JSX } from "react";
@@ -13,6 +14,32 @@ import {
 } from "../types";
 import { useUser } from "@clerk/clerk-react";
 
+// Add proper type for getAgentRun response
+type AgentRunResponse = {
+  status?: string;
+  task: string;
+  history_gif_url?: string;
+  recording_url?: string;
+  generated_ui?: string;
+  agent_history?: {
+    history: Array<{
+      model_output: {
+        current_state: {
+          summary?: string;
+          thought?: string;
+          important_contents?: string;
+          task_progress?: string;
+          future_plans?: string;
+        };
+        action: any[];
+      };
+      result: Array<{
+        extracted_content: string;
+      }>;
+    }>;
+  };
+};
+
 export default function SessionPage() {
   const { runId } = useParams<{ runId: string }>();
   const [isLoading, setIsLoading] = useState(true);
@@ -22,16 +49,7 @@ export default function SessionPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
 
-  // Track agent progress state
-  const [agentProgress, setAgentProgress] = useState({
-    memory: "",
-    taskProgress: "",
-    futurePlans: "",
-    step: 0,
-  });
-
   const [dynamicFilters, setDynamicFilters] = useState<DynamicFilters>({});
-  const [modifiedPrompt, setModifiedPrompt] = useState<string>("");
   const [activeTaskPrompt, setActiveTaskPrompt] = useState<string | null>(null);
 
   // Add task state to store the original task
@@ -55,10 +73,6 @@ export default function SessionPage() {
   const [agentStatus, setAgentStatus] = useState<string>("");
 
   const { user } = useUser();
-  const [error, setError] = useState<{
-    message: string;
-    detail: string;
-  } | null>(null);
 
   const navigate = useNavigate();
 
@@ -169,7 +183,7 @@ export default function SessionPage() {
       if (!runId) return;
 
       try {
-        const agentRun = await getAgentRun(runId);
+        const agentRun: AgentRunResponse = await getAgentRun(runId);
         console.log("Agent run data:", agentRun);
 
         // Set the agent status
@@ -310,7 +324,7 @@ export default function SessionPage() {
     if (!runId) return;
 
     try {
-      const agentRun = await getAgentRun(runId);
+      const agentRun: AgentRunResponse = await getAgentRun(runId);
       console.log("Final agent run data:", agentRun);
 
       // Update screenshot/GIF if available
@@ -489,13 +503,6 @@ export default function SessionPage() {
           };
           setTimeline((prev) => [...prev, updateItem]);
 
-          // Update agent progress
-          setAgentProgress({
-            memory: data.data.memory || "",
-            taskProgress: data.data.task_progress || "",
-            futurePlans: data.data.future_plans || "",
-            step: data.data.step || 0,
-          });
         }
         break;
 
@@ -870,7 +877,6 @@ export default function SessionPage() {
                         new RegExp(match.word, "i"),
                         option
                       );
-                      setModifiedPrompt(newPrompt);
                       setActiveTaskPrompt(newPrompt);
                     }}
                   >
@@ -925,22 +931,14 @@ export default function SessionPage() {
                       JSON.stringify(response.dynamic_filters)
                     );
                     localStorage.setItem("lastTask", activeTaskPrompt);
-                    console.log("about to navigate to new session", response.run_id);
+                    console.log(
+                      "about to navigate to new session",
+                      response.run_id
+                    );
                     // Navigate to new session
                     navigate(`/session/${response.run_id}`);
                   } catch (error: any) {
                     console.error("Error:", error);
-                    if (error.type === "VALIDATION_ERROR") {
-                      setError({
-                        message: error.error || "An error occurred",
-                        detail: error.detail || "Please try again",
-                      });
-                    } else {
-                      setError({
-                        message: "An unexpected error occurred",
-                        detail: "Please try again later",
-                      });
-                    }
                   } finally {
                     setIsStoppingTask(false);
                   }

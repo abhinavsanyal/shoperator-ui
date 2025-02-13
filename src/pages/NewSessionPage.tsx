@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { useNavigate } from "react-router-dom";
 import { runAgent } from "../api";
-import { DynamicFilters } from "../types";
 
 const MODEL_OPTIONS = ["gpt-4o-mini", "gpt-4", "o3-mini"];
 
