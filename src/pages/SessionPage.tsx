@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable no-case-declarations */
 import { useState, useRef, useEffect, JSX } from "react";
-import { useParams } from "react-router-dom";
-import { stopAgent, getAgentRun } from "../api";
+import { useParams, useNavigate } from "react-router-dom";
+import { stopAgent, getAgentRun, runAgent } from "../api";
 import {
   TimelineItem,
   AgentLog,
@@ -11,6 +11,7 @@ import {
   WebSocketMessage,
   DynamicFilters,
 } from "../types";
+import { useUser } from "@clerk/clerk-react";
 
 export default function SessionPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -52,6 +53,14 @@ export default function SessionPage() {
 
   // Add new state for agent status
   const [agentStatus, setAgentStatus] = useState<string>("");
+
+  const { user } = useUser();
+  const [error, setError] = useState<{
+    message: string;
+    detail: string;
+  } | null>(null);
+
+  const navigate = useNavigate();
 
   const setupWebSocket = (clientId: string) => {
     const ws = new WebSocket(`ws://localhost:3030/ws/${clientId}`);
@@ -896,12 +905,45 @@ export default function SessionPage() {
                 className="mt-2 w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 
                            text-white text-sm font-medium rounded-md transition-colors 
                            duration-150 flex items-center justify-center"
-                onClick={() => {
-                  // Here you would add the logic to run the new task
-                  console.log(
-                    "Running new task with prompt:",
-                    activeTaskPrompt
-                  );
+                onClick={async () => {
+                  if (!activeTaskPrompt || !user) return;
+
+                  // First stop the current agent
+                  setIsStoppingTask(true);
+                  try {
+                    await stopAgent();
+                    setIsLoading(false);
+                    cleanupWebSocket();
+
+                    // Then start new task with modified prompt
+                    const response = await runAgent(activeTaskPrompt, user.id);
+
+                    // Store new session data
+                    localStorage.setItem("lastClientId", response.client_id);
+                    localStorage.setItem(
+                      "dynamicFilters",
+                      JSON.stringify(response.dynamic_filters)
+                    );
+                    localStorage.setItem("lastTask", activeTaskPrompt);
+                    console.log("about to navigate to new session", response.run_id);
+                    // Navigate to new session
+                    navigate(`/session/${response.run_id}`);
+                  } catch (error: any) {
+                    console.error("Error:", error);
+                    if (error.type === "VALIDATION_ERROR") {
+                      setError({
+                        message: error.error || "An error occurred",
+                        detail: error.detail || "Please try again",
+                      });
+                    } else {
+                      setError({
+                        message: "An unexpected error occurred",
+                        detail: "Please try again later",
+                      });
+                    }
+                  } finally {
+                    setIsStoppingTask(false);
+                  }
                 }}
               >
                 Run new task
@@ -1073,14 +1115,6 @@ export default function SessionPage() {
                 />
               ) : null}
             </div>
-          )}
-
-          {generatedUi && (
-            <div>generatedUi</div>
-            // <div
-            //   className="prose max-w-none"
-            //   dangerouslySetInnerHTML={{ __html: generatedUi }}
-            // />
           )}
         </div>
       </div>
