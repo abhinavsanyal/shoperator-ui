@@ -76,6 +76,25 @@ export default function SessionPage() {
 
   const navigate = useNavigate();
 
+  // Add this near the top of the component, after the useState declarations
+  const loadingMessages = [
+    "Analyzing and processing results",
+    "Please wait while we piece together the report for you",
+    "Crafting the perfect representation",
+  ];
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+
+  // Add this useEffect to handle the message rotation
+  useEffect(() => {
+    if (!loadingResults) return;
+
+    const interval = setInterval(() => {
+      setCurrentMessageIndex((prev) => (prev + 1) % loadingMessages.length);
+    }, 3000); // Change message every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [loadingResults]);
+
   const setupWebSocket = (clientId: string) => {
     const ws = new WebSocket(`ws://localhost:3030/ws/${clientId}`);
 
@@ -342,6 +361,8 @@ export default function SessionPage() {
         setGeneratedUi(agentRun.generated_ui);
       }
 
+      setLoadingResults(false);
+
       // Process final agent history
       if (
         agentRun.agent_history?.history &&
@@ -502,7 +523,6 @@ export default function SessionPage() {
             },
           };
           setTimeline((prev) => [...prev, updateItem]);
-
         }
         break;
 
@@ -523,7 +543,6 @@ export default function SessionPage() {
 
       case "agent_finished":
         setIsLoading(false);
-        setLoadingResults(false);
         console.log("Agent run finished");
         handleAgentFinished();
         break;
@@ -1102,8 +1121,25 @@ export default function SessionPage() {
               {loadingResults ? (
                 <div className="flex flex-col items-center justify-center p-8">
                   <div className="w-8 h-8 border-4 border-gray-300 border-t-gray-800 rounded-full animate-spin mb-4"></div>
-                  <div className="text-gray-600 font-medium">
-                    Loading Results...
+                  <div className="h-6 relative overflow-hidden">
+                    {loadingMessages.map((message, index) => (
+                      <div
+                        key={message}
+                        className={`
+                          absolute w-full text-center text-gray-600 font-medium
+                          transition-transform duration-500 ease-in-out
+                          ${
+                            index === currentMessageIndex
+                              ? "transform-none opacity-100"
+                              : index < currentMessageIndex
+                              ? "-translate-y-full opacity-0"
+                              : "translate-y-full opacity-0"
+                          }
+                        `}
+                      >
+                        {message}
+                      </div>
+                    ))}
                   </div>
                 </div>
               ) : generatedUi ? (

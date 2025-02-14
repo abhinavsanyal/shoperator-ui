@@ -98,19 +98,15 @@ interface AgentRunDetails {
 
 export const runAgent = async (
   task: string,
-  clerkId: string
+  clerkId: string,
+  settings?: Partial<AgentConfig>
 ): Promise<AgentRunResponse> => {
   const config: AgentConfig = {
     task,
     agent_type: "custom",
-    llm_provider: "openai",
-    llm_model_name: "gpt-4o-mini",
-    llm_temperature: 0.2,
-    use_vision: true,
-    max_steps: 30,
-    max_actions_per_step: 5,
-    headless: true,
     tool_calling_method: "function_call",
+    headless: true,
+    ...settings, // Merge provided settings
   };
 
   try {
