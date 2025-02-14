@@ -16,7 +16,7 @@ export default function SignUpPage() {
             footerActionLink: "text-blue-500 hover:text-blue-600",
           },
         }}
-        afterSignUpUrl="/"
+        afterSignUpUrl="/dashboard"
         signInUrl="/sign-in"
       />
     </div>
