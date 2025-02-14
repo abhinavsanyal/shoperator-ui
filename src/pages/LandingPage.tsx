@@ -52,7 +52,7 @@ export default function LandingPage() {
         </p>
         <div className="flex space-x-4">
           <button
-            onClick={() => navigate("/sign-in")}
+            onClick={() => navigate("/dashboard")}
             className="px-6 py-3 bg-sky-50 text-white rounded-lg shadow-sm flex items-center space-x-2 hover:bg-blue-700 transition-all duration-200 font-medium"
             style={{ backgroundColor: "#000000" }}
           >
@@ -137,7 +137,7 @@ export default function LandingPage() {
           the best deals, and make informed purchasing decisions.
         </p>
         <button
-          onClick={() => navigate("/sign-in")}
+          onClick={() => navigate("/dashboard")}
           className="mt-6 inline-flex items-center space-x-2 px-6 py-3 bg-sky-50 text-white rounded-lg shadow-sm hover:bg-blue-700 transition-all duration-200 font-medium"
           style={{ backgroundColor: "#000000" }}
         >
