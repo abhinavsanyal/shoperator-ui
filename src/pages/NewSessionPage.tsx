@@ -36,7 +36,7 @@ export default function NewSessionPage() {
       );
       localStorage.setItem("lastTask", task);
       // Navigate to the session page with the run_id
-      navigate(`/session/${response.run_id}`);
+      navigate(`/dashboard/session/${response.run_id}`);
     } catch (error: any) {
       console.error("Error:", error);
       setIsLoading(false);

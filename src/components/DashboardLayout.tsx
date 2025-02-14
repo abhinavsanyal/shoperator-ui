@@ -99,7 +99,7 @@ export default function DashboardLayout() {
           {/* New Shopping Session Button */}
           <div className={`p-4 ${isSidebarOpen ? "" : "hidden"}`}>
             <button
-              onClick={() => navigate("/new-session")}
+              onClick={() => navigate("/dashboard/new-session")}
               className="w-full py-2 px-4 bg-gray-900 text-white rounded-lg hover:bg-gray-800 
                        transition-colors duration-200 flex items-center justify-center gap-2"
             >
@@ -123,7 +123,7 @@ export default function DashboardLayout() {
           {/* Collapsed state plus button */}
           {!isSidebarOpen && (
             <button
-              onClick={() => navigate("/new-session")}
+              onClick={() => navigate("/dashboard/new-session")}
               className="w-8 h-8 mx-auto mt-4 bg-gray-900 text-white rounded-full hover:bg-gray-800 
                        transition-colors duration-200 flex items-center justify-center"
             >
@@ -164,7 +164,9 @@ export default function DashboardLayout() {
                       return (
                         <div
                           key={run._id}
-                          onClick={() => navigate(`/session/${run._id}`)}
+                          onClick={() =>
+                            navigate(`/dashboard/session/${run._id}`)
+                          }
                           className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm 
                                    hover:shadow-md transition-shadow duration-200 cursor-pointer"
                         >
